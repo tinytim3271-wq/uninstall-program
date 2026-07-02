@@ -8,6 +8,7 @@ Windows, registry entries) so the program can be cleanly reinstalled.
 
 Usage:
     python uninstall.py <program_name> [--dry-run] [--yes]
+    ./uninstall.py <program_name> [--dry-run] [--yes]
 
 Options:
     --dry-run   List everything that would be removed without deleting anything.
@@ -31,7 +32,7 @@ def _expand(*parts: str) -> str:
     """Join and expand a path, returning an empty string on failure."""
     try:
         return os.path.expandvars(os.path.expanduser(os.path.join(*parts)))
-    except Exception:
+    except (TypeError, ValueError):
         return ""
 
 
@@ -74,7 +75,6 @@ def candidate_paths(program: str) -> list[str]:
         ]
 
     elif SYSTEM == "Darwin":  # macOS
-        home = _expand("~")
         candidates = [
             f"/Applications/{program}.app",
             f"/Applications/{program}",
@@ -99,7 +99,6 @@ def candidate_paths(program: str) -> list[str]:
         ]
 
     else:  # Linux (and other POSIX)
-        home = _expand("~")
         xdg_config = os.environ.get("XDG_CONFIG_HOME", _expand("~/.config"))
         xdg_data = os.environ.get("XDG_DATA_HOME", _expand("~/.local/share"))
         xdg_cache = os.environ.get("XDG_CACHE_HOME", _expand("~/.cache"))
@@ -200,7 +199,7 @@ def _registry_hive_map() -> dict:
     }
 
 
-def _delete_registry_key_recursive(hive, subkey: str) -> None:
+def _delete_registry_key_recursive(hive: "winreg.HKEYType | int", subkey: str) -> None:
     """Recursively delete *subkey* and all of its children."""
     import winreg  # type: ignore[import]
 
@@ -223,11 +222,19 @@ def _delete_registry_key_recursive(hive, subkey: str) -> None:
     for child in child_names:
         _delete_registry_key_recursive(hive, f"{subkey}\\{child}")
 
-    winreg.DeleteKey(hive, subkey)
+    try:
+        winreg.DeleteKey(hive, subkey)
+    except OSError as exc:
+        raise OSError(f"Failed to delete registry key '{subkey}': {exc}") from exc
 
 
 def _delete_registry_key(hive_name: str, subkey: str, dry_run: bool) -> bool:
-    """Recursively delete a registry key tree. Returns True if the key existed."""
+    """
+    Recursively delete a registry key tree.
+
+    Returns True if the key existed (and was or would be removed).
+    Raises OSError if the key exists but deletion fails.
+    """
     hive_map = _registry_hive_map()
     hive = hive_map.get(hive_name)
     if hive is None:
@@ -248,18 +255,18 @@ def _delete_registry_key(hive_name: str, subkey: str, dry_run: bool) -> bool:
     if dry_run:
         return True
 
-    try:
-        _delete_registry_key_recursive(hive, subkey)
-    except OSError as exc:
-        print(f"  [warning] Could not delete registry key {hive_name}\\{subkey}: {exc}",
-              file=sys.stderr)
-        return False
+    _delete_registry_key_recursive(hive, subkey)
     return True
 
 
 def _remove_registry_run_value(hive_name: str, subkey: str, value_name: str,
                                 dry_run: bool) -> bool:
-    """Remove a named value from a Run-style registry key."""
+    """
+    Remove a named value from a Run-style registry key.
+
+    Returns True if the value existed (and was or would be removed).
+    Raises OSError if the value exists but deletion fails.
+    """
     try:
         import winreg  # type: ignore[import]
     except ImportError:
@@ -287,12 +294,8 @@ def _remove_registry_run_value(hive_name: str, subkey: str, value_name: str,
 
     try:
         winreg.DeleteValue(key, value_name)
-    except OSError as exc:
-        print(f"  [warning] Could not remove registry value {value_name} "
-              f"from {hive_name}\\{subkey}: {exc}", file=sys.stderr)
+    finally:
         key.Close()
-        return False
-    key.Close()
     return True
 
 
@@ -307,10 +310,17 @@ def find_existing(paths: list[str]) -> list[str]:
 
 def remove_path(path: str) -> None:
     """Remove a file or directory tree."""
-    if os.path.islink(path) or os.path.isfile(path):
+    if os.path.islink(path):
+        # Remove symlink itself (file or directory target) without following it
+        os.remove(path)
+    elif os.path.isfile(path):
         os.remove(path)
     elif os.path.isdir(path):
         shutil.rmtree(path)
+    else:
+        raise OSError(
+            f"Cannot remove '{path}': exists but is not a file, symlink, or directory"
+        )
 
 
 def uninstall(program: str, dry_run: bool = False) -> dict[str, list[str]]:
@@ -327,7 +337,8 @@ def uninstall(program: str, dry_run: bool = False) -> dict[str, list[str]]:
     existing = find_existing(all_paths)
 
     if not existing:
-        results["skipped"].append("(no filesystem traces found)")
+        if not dry_run:
+            results["skipped"].append("(no filesystem traces found)")
     else:
         for path in existing:
             if dry_run:
@@ -343,13 +354,19 @@ def uninstall(program: str, dry_run: bool = False) -> dict[str, list[str]]:
     if SYSTEM == "Windows":
         targets = windows_registry_targets(program)
         for hive_name, subkey in targets["keys"]:
-            if _delete_registry_key(hive_name, subkey, dry_run):
-                results["removed"].append(f"[registry key] {hive_name}\\{subkey}")
+            label = f"[registry key] {hive_name}\\{subkey}"
+            try:
+                if _delete_registry_key(hive_name, subkey, dry_run):
+                    results["removed"].append(label)
+            except OSError as exc:
+                results["errors"].append(f"{label}: {exc}")
         for hive_name, subkey in targets["values"]:
-            if _remove_registry_run_value(hive_name, subkey, program, dry_run):
-                results["removed"].append(
-                    f"[registry value] {hive_name}\\{subkey}\\{program}"
-                )
+            label = f"[registry value] {hive_name}\\{subkey}\\{program}"
+            try:
+                if _remove_registry_run_value(hive_name, subkey, program, dry_run):
+                    results["removed"].append(label)
+            except OSError as exc:
+                results["errors"].append(f"{label}: {exc}")
 
     return results
 
