@@ -464,6 +464,7 @@ def main(argv: list[str] | None = None) -> int:
             print("[DRY RUN] The following would be removed:")
             for item in results["removed"]:
                 print(f"  [OK] {item}")
+                print(f"  [OK] {item}")
         else:
             print("[DRY RUN] Nothing to remove.")
     else:
@@ -471,12 +472,14 @@ def main(argv: list[str] | None = None) -> int:
             print("Successfully removed:")
             for item in results["removed"]:
                 print(f"  [OK] {item}")
+                print(f"  [OK] {item}")
         if results["skipped"]:
             for msg in results["skipped"]:
                 print(f"  (skipped) {msg}")
         if results["errors"]:
             print("\nErrors (items could not be removed):")
             for err in results["errors"]:
+                print(f"  [ERROR] {err}", file=sys.stderr)
                 print(f"  [ERROR] {err}", file=sys.stderr)
 
     if results["removed"]:
