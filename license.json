@@ -1,0 +1,16 @@
+{
+  "payload": {
+    "customer": "Production Package",
+    "email": "ops@reliable-clean-slate.local",
+    "expires_at": null,
+    "features": [
+      "all",
+      "prod"
+    ],
+    "issued_at": "2026-07-02",
+    "license_id": "148c020e-5f12-4b0d-b133-3eb988d2f176",
+    "machine_id": null,
+    "product": "Reliable clean slate uninstall"
+  },
+  "signature": "S6hAUTqZvzrvEo6s3XsEPgSwK0fMS3xGSKi_M06Nxxi-eoepYIxqo0B-71gyhkx7zGK2T5UcXPoNjIxS1HdHb50qU8o9c4-C_81j6_Ru8MzpZHzo6fYrRxLqXYCUVx4P0wWz-pjGrZtCIzKNmjlpvjdNwpbAOcS7gm3QtB2BFkWzXJV88szQUJoc9XviXUpVyXYIvGJzEm0XxsfPwtFT4e10-rk0B_OjL1d87T9vzkUq8xsgp2Duz-1I7MapYBOeqPhj6MmVy0cnK5R0f6wQ1WZQ0mVmUWGfv0mcsKun3PUtsldF9Q5TmLii5QXMS3pizMhLX50N2UC6V46ZUWaN5g"
+}
